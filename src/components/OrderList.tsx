@@ -29,7 +29,7 @@ export default function OrderList() {
         classId: '',
         order: ''
     });
-    const { data: orders = [], isLoading, mutate } = useSWR('/api/orders', fetcher, { refreshInterval: 10000 });
+    const { data: orders = [], isLoading, mutate } = useSWR('/api/orders', fetcher, { refreshInterval: 2000 });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -59,7 +59,7 @@ export default function OrderList() {
                 throw new Error('Ошибка при удалении заказа');
             }
 
-            mutate();
+            await mutate();
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Ошибка при удалении заказа');
         }
@@ -84,8 +84,7 @@ export default function OrderList() {
                 throw new Error(errorData.error || 'Ошибка при создании заказа');
             }
 
-            const data = await response.json();
-            mutate();
+            await mutate();
             setNewOrder({ classId: '', order: '' });
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Ошибка при создании заказа');

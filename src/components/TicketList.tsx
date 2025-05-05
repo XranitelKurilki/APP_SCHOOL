@@ -20,44 +20,69 @@ interface Ticket {
 
 const TicketList = () => {
     const { data: session } = useSession();
-    const { data: tickets = [], isLoading } = useSWR('/api/tickets', fetcher, { refreshInterval: 10000 });
+    const { data: tickets = [], isLoading, mutate } = useSWR('/api/tickets', fetcher, { refreshInterval: 2000 });
     const [modalOpen, setModalOpen] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
-        description: ''
+        description: '',
+        priority: 'medium',
+        status: 'open'
     });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setLoading(true);
+        setError('');
+
         try {
             const response = await fetch('/api/tickets', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: formData.title.trim(),
-                    description: formData.description.trim()
-                })
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Ошибка при создании тикета');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при создании заявки');
             }
 
+            await mutate();
+            setFormData({
+                title: '',
+                description: '',
+                priority: 'medium',
+                status: 'open'
+            });
             setModalOpen(false);
-            setFormData({ title: '', description: '' });
         } catch (error) {
-            console.error('Error creating ticket:', error);
-            alert(error instanceof Error ? error.message : 'Ошибка при создании тикета');
+            setError(error instanceof Error ? error.message : 'Ошибка при создании заявки');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleStatusChange = async (id: string, status: TicketStatus) => {
-        await fetch(`/api/tickets/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
-        });
+    const handleStatusChange = async (ticketId: string, newStatus: string) => {
+        try {
+            const response = await fetch(`/api/tickets/${ticketId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Ошибка при обновлении статуса');
+            }
+
+            await mutate();
+        } catch (error) {
+            console.error('Error updating ticket status:', error);
+        }
     };
 
     const getStatusColor = (status: TicketStatus) => {

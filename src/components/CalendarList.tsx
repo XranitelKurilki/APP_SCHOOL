@@ -18,13 +18,16 @@ const initialEventState = { id: '', title: '', description: '', date: '' };
 
 const CalendarList = () => {
     const { data: session } = useSession();
-    const { data: eventsByDate = {}, isLoading } = useSWR('/api/calendar', fetcher, { refreshInterval: 10000 });
+    const { data: eventsByDate = {}, isLoading, mutate } = useSWR('/api/calendar', fetcher, { refreshInterval: 2000 });
     const [modalOpen, setModalOpen] = useState(false);
     const [editEvent, setEditEvent] = useState<typeof initialEventState | null>(null);
     const [isEdit, setIsEdit] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [formData, setFormData] = useState(initialEventState);
 
     const handleOpenAdd = () => {
-        setEditEvent({ ...initialEventState, date: new Date().toISOString().slice(0, 10) });
+        setEditEvent(initialEventState);
         setIsEdit(false);
         setModalOpen(true);
     };
@@ -34,7 +37,7 @@ const CalendarList = () => {
             id: event.id,
             title: event.title,
             description: event.description || '',
-            date: event.date.slice(0, 10)
+            date: event.date
         });
         setIsEdit(true);
         setModalOpen(true);
@@ -45,31 +48,85 @@ const CalendarList = () => {
         setEditEvent({ ...editEvent, [e.target.name]: e.target.value });
     };
 
-    const handleSave = async () => {
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!editEvent) return;
-        if (isEdit) {
-            await fetch('/api/calendar', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(editEvent),
-            });
-        } else {
-            await fetch('/api/calendar', {
+        setLoading(true);
+        setError('');
+
+        try {
+            const response = await fetch('/api/calendar/create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: editEvent.title,
+                    description: editEvent.description,
+                    date: editEvent.date
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Ошибка при создании события');
+            }
+
+            await mutate();
+            setEditEvent(null);
+            setModalOpen(false);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'Ошибка при создании события');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editEvent) return;
+
+        try {
+            const response = await fetch('/api/calendar/update', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify(editEvent),
             });
+
+            if (!response.ok) {
+                throw new Error('Ошибка при обновлении события');
+            }
+
+            await mutate();
+            setEditEvent(null);
+            setModalOpen(false);
+        } catch (error) {
+            console.error('Error updating event:', error);
         }
-        setModalOpen(false);
-        setEditEvent(null);
     };
 
     const handleDelete = async (id: string) => {
-        await fetch('/api/calendar', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
+        if (!confirm('Вы уверены, что хотите удалить это событие?')) return;
+
+        try {
+            const response = await fetch('/api/calendar/delete', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Ошибка при удалении события');
+            }
+
+            await mutate();
+        } catch (error) {
+            console.error('Error deleting event:', error);
+        }
     };
 
     if (isLoading) return <div className="text-center py-8">Загрузка...</div>;
@@ -82,8 +139,12 @@ const CalendarList = () => {
             <h2 className="text-2xl font-bold mb-6 text-center">Календарь мероприятий</h2>
             {isSuperAdmin && (
                 <div className="flex justify-end mb-4">
-                    <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={handleOpenAdd}>
-                        + Добавить мероприятие
+                    <button
+                        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleOpenAdd}
+                        disabled={loading}
+                    >
+                        {loading ? 'Загрузка...' : '+ Добавить мероприятие'}
                     </button>
                 </div>
             )}
@@ -100,10 +161,18 @@ const CalendarList = () => {
                                         {ev.description && <div className="text-gray-600 text-sm">{ev.description}</div>}
                                         {isSuperAdmin && (
                                             <div className="absolute top-2 right-2 flex gap-2">
-                                                <button className="bg-yellow-400 text-white px-2 py-1 rounded hover:bg-yellow-500" onClick={() => handleOpenEdit(ev)}>
+                                                <button
+                                                    className="bg-yellow-400 text-white px-2 py-1 rounded hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    onClick={() => handleOpenEdit(ev)}
+                                                    disabled={loading}
+                                                >
                                                     Редактировать
                                                 </button>
-                                                <button className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600" onClick={() => handleDelete(ev.id)}>
+                                                <button
+                                                    className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    onClick={() => handleDelete(ev.id)}
+                                                    disabled={loading}
+                                                >
                                                     Удалить
                                                 </button>
                                             </div>
@@ -120,15 +189,28 @@ const CalendarList = () => {
                 <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
                         <h2 className="text-xl font-bold mb-4">{isEdit ? 'Редактировать' : 'Добавить'} мероприятие</h2>
-                        <div className="space-y-3">
-                            <input name="title" value={editEvent.title} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Название" />
+                        <form onSubmit={isEdit ? handleEdit : handleSubmit} className="space-y-3">
+                            <input name="title" value={editEvent.title} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Название" required />
                             <textarea name="description" value={editEvent.description} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Описание" />
-                            <input name="date" type="date" value={editEvent.date} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Дата" />
-                        </div>
-                        <div className="flex justify-end gap-2 mt-6">
-                            <button className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400" onClick={() => setModalOpen(false)}>Отмена</button>
-                            <button className="px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600" onClick={handleSave}>{isEdit ? 'Сохранить' : 'Добавить'}</button>
-                        </div>
+                            <input name="date" type="date" value={editEvent.date} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Дата" required />
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button
+                                    type="button"
+                                    className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={() => setModalOpen(false)}
+                                    disabled={loading}
+                                >
+                                    Отмена
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Сохранение...' : (isEdit ? 'Сохранить' : 'Добавить')}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  password      String
+  name          String
+  role          Int           @default(0)
+  tickets       Ticket[]
+  scheduleItems ScheduleItem[] @relation("TeacherSchedule")
+  calendarEvents CalendarEvent[]
+  classTeacherFor Class[]      @relation("ClassTeacher")
+  orders        Order[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum TicketStatus {
+    OPEN
+    IN_PROGRESS
+    CLOSED
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  title       String
+  description String
+  status      TicketStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdBy   String
+  creator     User         @relation(fields: [createdBy], references: [id])
+}
+
+model Class {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  scheduleItems ScheduleItem[]
+  classTeacherId String?      // ID классного руководителя
+  classTeacher   User?        @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  orders        Order[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model ScheduleItem {
+  id        String   @id @default(cuid())
+  title     String
+  startTime DateTime
+  endTime   DateTime
+  location  String?
+  teacherId String
+  teacher   User     @relation("TeacherSchedule", fields: [teacherId], references: [id])
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CalendarEvent {
+    id          String   @id @default(cuid())
+    title       String
+    description String?
+    date        DateTime
+    createdBy   String
+    creator     User     @relation(fields: [createdBy], references: [id])
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+}
+
+model Order {
+    id          String   @id @default(cuid())
+    classId     String
+    class       Class    @relation(fields: [classId], references: [id])
+    order       String
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    createdBy   String
+    creator     User     @relation(fields: [createdBy], references: [id])
+
+    @@index([classId])
+    @@index([createdBy])
+} 
